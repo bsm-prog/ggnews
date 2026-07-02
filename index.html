@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>경기도의회 보도자료 검색 엔진</title>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .control-panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 30px; text-align: center; }
+        .control-panel select, .control-panel input { padding: 10px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
+        .hot-issue { margin-top: 15px; font-weight: bold; color: #d9534f; }
+        .grid-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+        .card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-top: 4px solid #333; display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-weight: bold;}
+        .card.finance { border-top-color: #1a4b8c; } /* 기획재정 블루 */
+        .card.economy { border-top-color: #e67e22; } /* 경제노동 오렌지 */
+        .badge { background: #333; color: white; padding: 5px 10px; border-radius: 20px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>경기도의회 보도자료 검색 엔진</h2>
+        <p>최근 업데이트: 2026.07.02 08:00</p>
+    </div>
+
+    <div class="control-panel">
+        <select><option>시군 선택 (전체)</option><option>수원시</option><option>하남시</option></select>
+        <select><option>의원 선택 (전체)</option><option>강성삼</option><option>고은정</option></select>
+        <input type="text" placeholder="🔍 추가 검색어 입력...">
+        <button style="padding: 10px 20px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer;">검색</button>
+        <div class="hot-issue">
+            <input type="checkbox" id="hot-issue-toggle"> <label for="hot-issue-toggle">🚨 핫이슈만 보기 (지연, 반발, 논란, 예산 부족 등)</label>
+        </div>
+    </div>
+
+    <div class="grid-container">
+        <!-- 샘플 카드 4개만 우선 배치 (이후 11개로 확장) -->
+        <div class="card finance"><span>기획·재정</span> <span class="badge" style="background:#1a4b8c;">28</span></div>
+        <div class="card economy"><span>경제·노동</span> <span class="badge" style="background:#e67e22;">34</span></div>
+        <div class="card" style="border-top-color: #d9534f;"><span>안전·행정</span> <span class="badge" style="background:#d9534f;">26</span></div>
+        <div class="card" style="border-top-color: #8e44ad;"><span>문화·체육·관광</span> <span class="badge" style="background:#8e44ad;">26</span></div>
+    </div>
+
+</body>
+</html>
