@@ -1,16 +1,15 @@
 name: 🔄 Update Press Data
 
-# 이 로봇이 언제 작동할지 정의합니다.
 on:
   schedule:
-    # 매일 한국시간 오전 6시에 자동으로 실행 (서버시간(UTC) 기준 전날 밤 9시)
     - cron: '0 21 * * *'
   workflow_dispatch: 
-    # [수동 실행 버튼]을 만들어줍니다. (내가 원할 때 언제든 클릭해서 업데이트 가능)
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # 깃허브 저장소 수정 권한 부여
 
     steps:
       - name: 1. 내 저장소 코드 가져오기
@@ -21,18 +20,35 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 3. 파이썬 로봇(scraper.py) 실행하기
-        # 여기서 아까 만든 비밀 금고(Secrets)의 키를 파이썬에게 전달합니다.
+      - name: 3. 파이썬 로봇 실행하기
         env: 
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
         run: |
           python scraper.py
 
-      - name: 4. 새롭게 수집된 데이터(data.json) 저장소에 반영하기
+      - name: 4. 데이터 반영하기
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add data.json
-          git commit -m "🤖 자동 업데이트: 최신 보도자료 수집 완료" || echo "변경된 데이터가 없습니다."
-          git push
+          # 변경사항이 있을 때만 커밋
+          git diff --quiet && git diff --staged --quiet || (git commit -m "🤖 자동 업데이트: 데이터 수집 완료" && git push)
+```
+eof
+
+---
+
+### 2. 검색 버튼 추가 요청
+검색 버튼이 있어야 사용이 더 편하시다면, `index.html` 파일의 `<div class="search-row">` 부분에 버튼을 하나 추가해 드리겠습니다. 
+
+아래 코드를 복사해서 **`index.html`**의 해당 위치에 붙여넣어 주세요.
+
+```html
+<!-- index.html의 search-row 부분 아래에 추가 -->
+<div class="search-row">
+    <!-- 기존 선택창들... -->
+    <button onclick="filterAndRender()" style="padding: 12px 20px; background-color: #333; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
+        🔍 검색하기
+    </button>
+</div>
