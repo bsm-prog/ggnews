@@ -41,6 +41,81 @@
         <div class="card" style="border-top-color: #d9534f;"><span>안전·행정</span> <span class="badge" style="background:#d9534f;">26</span></div>
         <div class="card" style="border-top-color: #8e44ad;"><span>문화·체육·관광</span> <span class="badge" style="background:#8e44ad;">26</span></div>
     </div>
+<!-- 이 코드를 </body> 바로 위에 붙여넣으세요 -->
+<script>
+    let allArticles = []; // 전체 기사를 담아둘 바구니
 
+    // 1. data.json 파일 불러오기
+    fetch('data.json')
+        .then(response => response.json())
+        .then(data => {
+            allArticles = data.articles;
+            renderArticles(allArticles); // 처음 화면에 전체 기사 뿌려주기
+        })
+        .catch(error => {
+            document.querySelector('.grid-container').innerHTML = '<p style="text-align:center; width:100%;">아직 수집된 데이터가 없습니다. 파이썬 엔진을 실행해주세요!</p>';
+        });
+
+    // 2. 기사들을 화면에 카드 형태로 그려주는 함수
+    function renderArticles(articles) {
+        const container = document.querySelector('.grid-container');
+        container.innerHTML = ''; // 기존 카드 싹 지우기
+
+        articles.forEach(article => {
+            // 핫이슈인 경우 빨간색 경고등 아이콘 추가
+            const hotIcon = article.is_hot_issue ? '🚨 ' : '';
+            // 분야에 따라 카드 윗부분 색상 다르게 설정 (기본은 회색)
+            let borderColor = '#ccc';
+            if(article.category === '기획·재정') borderColor = '#1a4b8c';
+            if(article.category === '경제·노동') borderColor = '#e67e22';
+            if(article.category === '건설·교통') borderColor = '#8b4513';
+            if(article.is_hot_issue) borderColor = '#d9534f'; // 핫이슈는 무조건 빨간색 테두리
+
+            const cardHTML = `
+                <div class="card" style="border-top-color: ${borderColor}; flex-direction: column; align-items: flex-start; gap: 10px;">
+                    <div style="width: 100%; display: flex; justify-content: space-between;">
+                        <span class="badge" style="background:${borderColor};">${article.category}</span>
+                        <span style="font-size: 0.8em; color: #777;">${article.date} | ${article.municipality}</span>
+                    </div>
+                    <div style="font-size: 1.1em; font-weight: bold; margin-top: 5px;">
+                        ${hotIcon}${article.title}
+                    </div>
+                    <div style="font-size: 0.9em; color: #555; line-height: 1.4;">
+                        ${article.content.substring(0, 80)}...
+                    </div>
+                    <a href="${article.url}" target="_blank" style="font-size: 0.8em; color: #0066cc; text-decoration: none; margin-top: auto;">원문 보기 ↗</a>
+                </div>
+            `;
+            container.innerHTML += cardHTML;
+        });
+    }
+
+    // 3. 검색 및 필터 기능 작동시키기
+    document.querySelector('.control-panel button').addEventListener('click', filterData);
+    document.getElementById('hot-issue-toggle').addEventListener('change', filterData);
+
+    function filterData() {
+        // 사용자가 선택/입력한 값 가져오기
+        const selectedMuni = document.querySelectorAll('.control-panel select')[0].value;
+        const searchKeyword = document.querySelector('.control-panel input').value.trim();
+        const isHotOnly = document.getElementById('hot-issue-toggle').checked;
+
+        // 조건에 맞춰 기사 걸러내기
+        let filtered = allArticles;
+
+        if (selectedMuni !== '시군 선택 (전체)') {
+            filtered = filtered.filter(a => a.municipality === selectedMuni || a.title.includes(selectedMuni));
+        }
+        if (searchKeyword !== '') {
+            filtered = filtered.filter(a => a.title.includes(searchKeyword) || a.content.includes(searchKeyword));
+        }
+        if (isHotOnly) {
+            filtered = filtered.filter(a => a.is_hot_issue === true);
+        }
+
+        // 걸러진 기사들만 다시 화면에 그리기
+        renderArticles(filtered);
+    }
+</script>
 </body>
 </html>
