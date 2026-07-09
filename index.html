@@ -1,69 +1,260 @@
-import urllib.request
-import urllib.parse
-import xml.etree.ElementTree as ET
-import json
-
-def fetch_local_news(region, keywords):
-    """
-    지역명과 이슈 키워드를 조합하여 구글 뉴스(RSS)에서 최신 보도자료/기사를 수집하는 함수
-    """
-    # 검색어 조합 (예: "하남시 (예산 OR 조례 OR 민원)")
-    keyword_query = " OR ".join(keywords)
-    search_query = f"{region} ({keyword_query})"
-    
-    # URL 인코딩 및 RSS 주소 생성
-    encoded_query = urllib.parse.quote(search_query)
-    url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
-    
-    # 기사 수집 (보안 우회를 위해 User-Agent 추가)
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    response = urllib.request.urlopen(req)
-    xml_data = response.read()
-    
-    # XML 데이터 파싱
-    root = ET.fromstring(xml_data)
-    news_list = []
-    
-    # 기획에서 약속한 '제외 키워드' 
-    exclude_keywords = ["동정", "인사발령", "부고"]
-    
-    for item in root.findall('./channel/item'):
-        title = item.find('title').text
-        link = item.find('link').text
-        pub_date = item.find('pubDate').text
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>경기도의회 보도자료 맞춤 검색 대시보드</title>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; background-color: #f4f7f9; margin: 0; }
+        header { background-color: #002366; color: white; padding: 20px; font-size: 20px; font-weight: bold; }
+        .container { max-width: 950px; margin: 20px auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .hidden { display: none !important; }
         
-        # 1차 필터링: 제목에 제외 키워드가 있으면 건너뜀
-        if any(ex_kw in title for ex_kw in exclude_keywords):
-            continue
+        /* 검색 필터 스타일 */
+        .search-row { margin-bottom: 20px; display: flex; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 15px; }
+        .label { width: 140px; font-weight: bold; color: #333; }
+        select, input[type="text"], input[type="date"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        
+        /* 토글 스위치 */
+        .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 22px; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #002366; }
+        input:checked + .slider:before { transform: translateX(22px); }
+
+        /* 기간 버튼 */
+        .period-btns { display: flex; gap: 5px; margin-right: 10px; }
+        .btn-period { padding: 5px 12px; border: 1px solid #ccc; background: white; cursor: pointer; font-size: 13px; border-radius: 4px; }
+        .btn-period:hover { background: #f0f0f0; }
+        
+        /* 버튼 스타일 */
+        .btn-primary { background: #002366; color: white; padding: 10px 24px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-secondary { background: #555; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-outline { background: white; color: #002366; padding: 12px 20px; border: 2px solid #002366; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 15px; transition: 0.3s; }
+        .btn-outline:hover { background: #002366; color: white; }
+        .btn-word { background: #2b579a; color: white; padding: 10px 24px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; } /* 워드 고유 색상 */
+        .btn-word:hover { background: #1e3f70; }
+        
+        /* 리스트 스타일 */
+        .issue-list { margin-top: 30px; border-top: 2px solid #333; padding-top: 20px; }
+        .card { border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px; background-color: #fff; display: flex; align-items: center; gap: 10px; }
+        .card input[type="checkbox"] { transform: scale(1.2); cursor: pointer; }
+        
+        /* 보고서 화면 스타일 */
+        .report-layout { display: flex; gap: 20px; margin-top: 20px; }
+        .report-left { flex: 4; border-right: 1px solid #ccc; padding-right: 20px; }
+        .report-right { flex: 6; }
+        .selected-item { padding: 10px 10px 10px 15px; border-bottom: 1px solid #eee; font-size: 14px; position: relative; }
+        .selected-item::before { content: "·"; position: absolute; left: 5px; font-weight: bold; }
+        
+        /* 탭 및 폼 스타일 */
+        .tab-container { display: flex; border-bottom: 2px solid #002366; margin-bottom: 15px; }
+        .tab-btn { flex: 1; padding: 12px; border: none; background: #f4f7f9; cursor: pointer; font-weight: bold; color: #555; }
+        .tab-btn.active { background: #002366; color: white; }
+        .policy-form { background: #f8f9fa; padding: 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; }
+        .form-row { display: flex; align-items: center; margin-bottom: 10px; }
+        .form-row:last-child { margin-bottom: 0; }
+        .form-label { width: 80px; font-weight: bold; font-size: 13px; }
+        .form-input { flex: 1; }
+    </style>
+</head>
+<body>
+    <header>경기도의회 보도자료 맞춤 검색 대시보드</header>
+    
+    <!-- 1. 검색 화면 -->
+    <div id="searchView" class="container">
+        <!-- 필터 영역 -->
+        <div class="search-row"><div class="label">의원명</div><select id="memberSelect" style="width: 200px;"><option value="">선택 안 함</option></select></div>
+        <div class="search-row"><div class="label">지역구</div><select id="regionSelect" style="width: 200px;"><option value="">경기도 전체</option></select></div>
+        <div class="search-row"><div class="label">기간 설정</div><div class="period-btns"><button class="btn-period">1일</button><button class="btn-period">1주</button><button class="btn-period">1개월</button><button class="btn-period">3개월</button></div><input type="date"> ~ <input type="date"></div>
+        <div class="search-row"><div class="label">이슈 모아보기</div><label class="switch"><input type="checkbox" id="issueToggle" checked><span class="slider"></span></label></div>
+
+        <div style="text-align: center;"><button class="btn-primary" style="width: 200px;">검색 실행</button></div>
+
+        <div class="issue-list" id="resultArea">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0;">최근 24시간 주요 이슈</h3>
+                <button class="btn-primary" onclick="goToReport()">선택한 기사로 보고서 작성</button>
+            </div>
+            <div id="cards"></div>
+        </div>
+    </div>
+
+    <!-- 2. 보고서 작성 화면 -->
+    <div id="reportView" class="container hidden">
+        <h2 style="margin-top: 0;">보고서 초안 작성</h2>
+        <div class="report-layout">
+            <!-- 좌측 -->
+            <div class="report-left">
+                <h4 style="margin-top: 0; color: #002366;">선택된 보도자료</h4>
+                <div id="selectedList"></div>
+            </div>
             
-        news_list.append({
-            "title": title,
-            "link": link,
-            "date": pub_date
+            <!-- 우측 -->
+            <div class="report-right">
+                <div class="tab-container">
+                    <button class="tab-btn active" id="tabStatus" onclick="switchTab('status')">보도자료 현황 보고</button>
+                    <button class="tab-btn" id="tabPolicy" onclick="switchTab('policy')">정책 제안 보고서</button>
+                </div>
+
+                <div id="policyConfigForm" class="policy-form hidden">
+                    <div class="form-row"><div class="form-label">보고 주제</div><input type="text" id="inputTopic" class="form-input" placeholder="예: 신규 지원 사업 추진 검토"></div>
+                    <div class="form-row"><div class="form-label">작성 목적</div><input type="text" id="inputPurpose" class="form-input" placeholder="예: 예산 확보 및 조례 개정"></div>
+                    <div class="form-row"><div class="form-label">보고 대상</div><input type="text" id="inputTarget" class="form-input" placeholder="예: 상임위원장, 의원님"></div>
+                    <div class="form-row">
+                        <div class="form-label">보고 분량</div>
+                        <select id="inputLength" class="form-input"><option>A4 1쪽 (핵심 요약)</option><option>A4 2쪽 (상세 보고)</option></select>
+                    </div>
+                </div>
+
+                <button class="btn-outline" style="width: 100%; margin-bottom: 15px;" onclick="generateAIReport()">AI 초안 자동 생성</button>
+
+                <textarea id="reportEditor" style="width:100%; height:400px; padding: 15px; border: 1px solid #ccc; border-radius: 4px; font-family: 'Malgun Gothic'; box-sizing: border-box; line-height: 1.6; resize: vertical;" placeholder="AI가 작성한 보고서 초안이 이곳에 표시되며, 직접 수정할 수 있습니다."></textarea>
+                
+                <div style="display: flex; justify-content: space-between; margin-top: 15px;">
+                    <button class="btn-secondary" onclick="goToSearch()">목록으로 돌아가기</button>
+                    <!-- 워드 다운로드 버튼으로 변경 -->
+                    <button class="btn-word" onclick="downloadWord()">워드(Word) 다운로드</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 스크립트 영역 -->
+    <script>
+        // 1. 전체 의원 데이터 
+        const members = [{"name":"강성삼","region":"하남시"},{"name":"고은정","region":"고양시"},{"name":"고찬석","region":"용인시"},{"name":"국은주","region":"경기도"},{"name":"국중범","region":"성남시"},{"name":"권태익","region":"경기도"},{"name":"금종례","region":"경기도"},{"name":"김경옥","region":"평택시"},{"name":"김귀근","region":"군포시"},{"name":"김동규","region":"안산시"},{"name":"김동희","region":"부천시"},{"name":"김명숙","region":"평택시"},{"name":"김미경","region":"광주시"},{"name":"김미숙","region":"군포시"},{"name":"김선희","region":"용인시"},{"name":"김성기","region":"경기도"},{"name":"김성남","region":"포천시"},{"name":"김성수","region":"안양시"},{"name":"김성태","region":"용인시"},{"name":"김순현","region":"파주시"},{"name":"김승기","region":"남양주시"},{"name":"김영수","region":"화성시"},{"name":"김영훈","region":"시흥시"},{"name":"김영훈","region":"화성시"},{"name":"김영희","region":"오산시"},{"name":"김용성","region":"광명시"},{"name":"김용찬","region":"용인시"},{"name":"김운남","region":"고양시"},{"name":"김인영","region":"이천시"},{"name":"김일중","region":"이천시"},{"name":"김종배","region":"시흥시"},{"name":"김지호","region":"의정부시"},{"name":"김진명","region":"성남시"},{"name":"김진후","region":"경기도"},{"name":"김창식","region":"남양주시"},{"name":"김철환","region":"김포시"},{"name":"김태형","region":"화성시"},{"name":"김태희","region":"안산시"},{"name":"김한슬","region":"경기도"},{"name":"김해련","region":"고양시"},{"name":"김현덕","region":"경기도"},{"name":"김현석","region":"과천시"},{"name":"김회철","region":"화성시"},{"name":"남종섭","region":"용인시"},{"name":"류기준","region":"고양시"},{"name":"명성숙","region":"부천시"},{"name":"문승호","region":"성남시"},{"name":"박근철","region":"의왕시"},{"name":"박상현","region":"부천시"},{"name":"박순희","region":"부천시"},{"name":"박영선","region":"가평시"},{"name":"박옥분","region":"수원시"},{"name":"박은경","region":"안산시"},{"name":"박은주","region":"파주시"},{"name":"박정균","region":"경기도"},{"name":"박준모","region":"안양시"},{"name":"방미숙","region":"하남시"},{"name":"방성환","region":"성남시"},{"name":"백승기","region":"안성시"},{"name":"변재석","region":"고양시"},{"name":"서광범","region":"여주시"},{"name":"서인하","region":"경기도"},{"name":"서혜진","region":"경기도"},{"name":"성기황","region":"군포시"},{"name":"성복임","region":"군포시"},{"name":"손성익","region":"파주시"},{"name":"손희정","region":"파주시"},{"name":"송규근","region":"고양시"},{"name":"송연섭","region":"경기도"},{"name":"신명순","region":"김포시"},{"name":"신미숙","region":"화성시"},{"name":"심동용","region":"동두천시"},{"name":"심상록","region":"광명시"},{"name":"안계명","region":"평택시"},{"name":"안광률","region":"시흥시"},{"name":"안시현","region":"동두천시"},{"name":"양경석","region":"평택시"},{"name":"엄교섭","region":"용인시"},{"name":"오남석","region":"경기도"},{"name":"오민용","region":"하남시"},{"name":"오지훈","region":"하남시"},{"name":"오진택","region":"화성시"},{"name":"오현정","region":"화성시"},{"name":"우현욱","region":"용인시"},{"name":"유경현","region":"부천시"},{"name":"유병수","region":"남양주시"},{"name":"유수연","region":"의정부시"},{"name":"유재수","region":"안산시"},{"name":"유종상","region":"광명시"},{"name":"유필선","region":"여주시"},{"name":"유호준","region":"남양주시"},{"name":"윤도희","region":"안양시"},{"name":"윤순옥","region":"양평시"},{"name":"윤종영","region":"연천시"},{"name":"윤충식","region":"포천시"},{"name":"이건한","region":"용인시"},{"name":"이건희","region":"남양주시"},{"name":"이기대","region":"고양시"},{"name":"이대한","region":"남양주시"},{"name":"이미정","region":"경기도"},{"name":"이병숙","region":"수원시"},{"name":"이선구","region":"부천시"},{"name":"이성원","region":"시흥시"},{"name":"이성한","region":"고양시"},{"name":"이영봉","region":"의정부시"},{"name":"이오수","region":"수원시"},{"name":"이윤승","region":"고양시"},{"name":"이은미","region":"안산시"},{"name":"이자형","region":"광주시"},{"name":"이재영","region":"부천시"},{"name":"이종춘","region":"파주시"},{"name":"이주현","region":"안성시"},{"name":"이지혜","region":"경기도"},{"name":"이진형","region":"화성시"},{"name":"이채명","region":"안양시"},{"name":"이철형","region":"안산시"},{"name":"이혜원","region":"양평시"},{"name":"이홍근","region":"화성시"},{"name":"임유진","region":"고양시"},{"name":"임창열","region":"구리시"},{"name":"임창휘","region":"광주시"},{"name":"장경임","region":"경기도"},{"name":"장민수","region":"안양시"},{"name":"장송회","region":"남양주시"},{"name":"장승희","region":"구리시"},{"name":"장윤정","region":"안산시"},{"name":"장정희","region":"수원시"},{"name":"장태환","region":"의왕시"},{"name":"장한별","region":"수원시"},{"name":"전석훈","region":"성남시"},{"name":"전예슬","region":"오산시"},{"name":"전자영","region":"용인시"},{"name":"정석원","region":"양주시"},{"name":"정연일","region":"고양시"},{"name":"정용한","region":"성남시"},{"name":"정종혁","region":"성남시"},{"name":"정현미","region":"남양주시"},{"name":"조명자","region":"수원시"},{"name":"조병진","region":"의정부시"},{"name":"지영일","region":"경기도"},{"name":"차유미","region":"경기도"},{"name":"채명기","region":"수원시"},{"name":"채명신","region":"용인시"},{"name":"채신덕","region":"김포시"},{"name":"채정선","region":"양주시"},{"name":"최경순","region":"안양시"},{"name":"최규진","region":"고양시"},{"name":"최동식","region":"시흥시"},{"name":"최만식","region":"성남시"},{"name":"최명진","region":"김포시"},{"name":"최미금","region":"경기도"},{"name":"최민","region":"광명시"},{"name":"최보라","region":"광주시"},{"name":"최상규","region":"수원시"},{"name":"최성운","region":"부천시"},{"name":"최수연","region":"양주시"},{"name":"최순자","region":"경기도"},{"name":"최종현","region":"수원시"},{"name":"최지원","region":"경기도"},{"name":"최찬민","region":"수원시"},{"name":"최혜경","region":"경기도"},{"name":"한규찬","region":"평택시"},{"name":"한승훈","region":"평택시"},{"name":"한영수","region":"용인시"},{"name":"한운옥","region":"수원시"},{"name":"황수영","region":"수원시"},{"name":"황은화","region":"안산시"}];
+
+        // 초기 화면 로드
+      window.onload = function() {
+    // 1. 의원/지역구 드롭다운 세팅 (기존 기능 유지)
+    const regionSelect = document.getElementById('regionSelect');
+    const memberSelect = document.getElementById('memberSelect');
+    
+    const regions = [...new Set(members.map(m => m.region))].sort();
+    regions.forEach(r => regionSelect.innerHTML += `<option value="${r}">${r}</option>`);
+    memberSelect.innerHTML += members.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+
+    memberSelect.addEventListener('change', () => {
+        const selected = members.find(m => m.name === memberSelect.value);
+        regionSelect.value = selected ? selected.region : "";
+    });
+
+    // 2. 파이썬이 만든 'news_data.json' 파일을 읽어와서 화면에 뿌리기
+    const cards = document.getElementById('cards');
+    cards.innerHTML = "데이터를 불러오는 중입니다...";
+
+    // fetch('파일이름')은 "이 파일을 열어서 내용을 가져와!"라는 명령어입니다.
+    fetch('news_data.json') 
+        .then(response => response.json()) // 가져온 파일을 데이터(json)로 변환합니다.
+        .then(data => {
+            cards.innerHTML = ""; // 로딩 메시지를 지웁니다.
+            
+            // 가져온 데이터(data)를 하나씩 꺼내서 카드로 만듭니다.
+            data.forEach((news) => {
+                cards.innerHTML += `
+                    <div class="card">
+                        <input type="checkbox" class="article-check">
+                        <span class="article-title">${news.title}</span>
+                    </div>`;
+            });
         })
-        
-        # 대시보드 테스트를 위해 우선 10개만 추출
-        if len(news_list) >= 10:
-            break
+        .catch(error => {
+            // 파일을 못 찾거나 문제가 생겼을 때 보여줄 메시지
+            cards.innerHTML = "데이터를 불러올 수 없습니다. 파이썬 크롤러를 먼저 실행하세요.";
+            console.error('Error:', error);
+        });
+};
+
+        let currentTab = 'status';
+
+        function goToReport() {
+            const checkedBoxes = document.querySelectorAll('.article-check:checked');
+            if(checkedBoxes.length === 0) { alert("보고서에 담을 기사를 하나 이상 선택해주세요."); return; }
             
-    return news_list
+            const selectedList = document.getElementById('selectedList');
+            selectedList.innerHTML = "";
+            checkedBoxes.forEach(box => {
+                selectedList.innerHTML += `<div class="selected-item">${box.nextElementSibling.innerText}</div>`;
+            });
 
-# ==========================================
-# 🚀 실행 및 테스트 부분
-# ==========================================
-# 우리가 세팅한 40개 이슈 키워드 중 일부
-ISSUE_KEYWORDS = ["지적", "예산", "조례", "민원", "촉구", "대책"]
+            switchTab('status');
+            document.getElementById('searchView').classList.add('hidden');
+            document.getElementById('reportView').classList.remove('hidden');
+        }
 
-# "고양시" 지역의 이슈 기사를 수집해 봅니다.
-print("🔎 보도자료를 수집 중입니다...\n")
-result_news = fetch_local_news("고양시", ISSUE_KEYWORDS)
+        function goToSearch() {
+            document.getElementById('searchView').classList.remove('hidden');
+            document.getElementById('reportView').classList.add('hidden');
+        }
 
-# 결과 출력 (나중에는 이 데이터가 HTML 대시보드로 쏙 들어갑니다!)
-for idx, news in enumerate(result_news, 1):
-    print(f"[{idx}] {news['title']}")
-    print(f" └─ 일자: {news['date']}")
-    print(f" └─ 원문: {news['link']}\n")
+        function switchTab(tabName) {
+            currentTab = tabName;
+            document.getElementById('tabStatus').classList.toggle('active', tabName === 'status');
+            document.getElementById('tabPolicy').classList.toggle('active', tabName === 'policy');
+            document.getElementById('policyConfigForm').classList.toggle('hidden', tabName === 'status');
+            document.getElementById('reportEditor').value = "";
+        }
 
-# 최종적으로 대시보드와 연동하기 위해 JSON 파일로 저장하는 코드
-with open("news_data.json", "w", encoding="utf-8") as f:
-    json.dump(result_news, f, ensure_ascii=False, indent=4)
+        function generateAIReport() {
+            const editor = document.getElementById('reportEditor');
+            editor.value = "AI가 수집된 데이터를 분석하여 공공행정 보고서 초안을 작성 중입니다...\n(약 3~5초 정도 소요됩니다.)";
+            
+            setTimeout(() => {
+                let simulatedResponse = "";
+                if (currentTab === 'status') {
+                    simulatedResponse = `[보고] 최근 도정 보도자료 현황 요약\n\n1. 사건 개요\n o 수원시 등 도내 주요 지자체의 공공시설 확충 및 관련 예산 확보 논의 진행 중\n\n2. 주요 요지\n o 도민 편의 증진을 위한 인프라 구축 필요성 대두\n o 국·도비 매칭 비율 및 재정 부담에 대한 지자체 간 이견 존재\n\n3. 향후 처리 방안 (제안)\n o 도의회 차원의 예산 지원 근거 마련 및 조례 제·개정 요건 검토 필요\n o 소관 상임위 차원의 현장 방문 추진 권고`;
+                } else {
+                    simulatedResponse = `[보고서] ${document.getElementById('inputTopic').value || "신규 사업 검토"}에 관한 건\n\n보고대상: ${document.getElementById('inputTarget').value || "의사결정권자"}\n작성목적: ${document.getElementById('inputPurpose').value || "정책 제안"}\n\n1. 추진 배경 (Why)\n o 최근 지역 내 공공인프라 확충 요구가 증가함에 따라 선제적 대응 체계 마련 필요\n o 기존 예산 배분 방식의 한계로 인해 신속한 재정 투입이 지연되고 있음\n\n2. 핵심 추진 과제 (What)\n o 도비 및 시군비 매칭 비율 조정 및 지원 조례 개정 추진\n\n3. 실행 계획 (How)\n o (단기) 소관 상임위원회 간담회 개최 및 현장 의견 수렴\n o (중기) 관련 조례안 발의 및 예산결산특별위원회 심의 연계\n\n4. 기대 효과 (So What)\n o 신속한 예산 확보를 통한 도민 체감형 공공서비스 적기 제공\n o 조례 개정을 통한 안정적 재정 지원 근거 확립 및 행정 신뢰도 제고`;
+                }
+                editor.value = simulatedResponse;
+            }, 2000);
+        }
+
+        // ==========================================
+        // 🚀 3단계: 워드(Word) 다운로드 로직
+        // ==========================================
+        function downloadWord() {
+            const content = document.getElementById('reportEditor').value;
+            if (!content || content.trim() === "") {
+                alert("다운로드할 내용이 없습니다. 먼저 AI 초안을 생성하거나 텍스트를 입력해주세요.");
+                return;
+            }
+
+            // 텍스트의 줄바꿈(\n)을 HTML <br> 태그로 변환하여 워드에서도 줄바꿈이 유지되도록 처리
+            const htmlContent = `
+                <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                <head>
+                    <meta charset='utf-8'>
+                    <title>AI 보고서</title>
+                </head>
+                <body>
+                    <div style="font-family: 'Malgun Gothic', sans-serif;">
+                        ${content.replace(/\n/g, '<br>')}
+                    </div>
+                </body>
+                </html>
+            `;
+            
+            // Blob을 사용하여 데이터를 워드 형식(application/msword)으로 패키징
+            const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
+            const url = URL.createObjectURL(blob);
+            
+            // 파일명에 오늘 날짜 생성 (예: AI_보고서_초안_20260615.doc)
+            const date = new Date();
+            const dateString = date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
+            const filename = `AI_보고서_초안_${dateString}.doc`;
+
+            // 가상의 <a> 태그를 만들어 다운로드 실행
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = filename;
+            
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
